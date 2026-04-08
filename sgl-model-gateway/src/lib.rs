@@ -2,6 +2,7 @@ pub mod app_context;
 pub mod config;
 pub mod core;
 pub mod data_connector;
+pub mod diffusion_proxy;
 pub mod grpc_client;
 pub mod mcp;
 pub mod middleware;

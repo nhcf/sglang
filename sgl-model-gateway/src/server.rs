@@ -22,6 +22,7 @@ use tracing::{error, info, warn, Level};
 use crate::{
     app_context::AppContext,
     config::{RouterConfig, RoutingMode},
+    diffusion_proxy::DiffusionProxy,
     core::{
         worker_to_info,
         workflow::{
@@ -60,6 +61,7 @@ pub struct AppState {
     pub context: Arc<AppContext>,
     pub concurrency_queue_tx: Option<tokio::sync::mpsc::Sender<QueuedRequest>>,
     pub router_manager: Option<Arc<RouterManager>>,
+    pub diffusion_proxy: Arc<DiffusionProxy>,
 }
 
 async fn sink_handler() -> Response {
@@ -589,6 +591,15 @@ async fn delete_worker(State(state): State<Arc<AppState>>, Path(url): Path<Strin
     }
 }
 
+// Diffusion model proxy handlers
+async fn diffusion_proxy_handler(State(state): State<Arc<AppState>>, headers: http::HeaderMap, req: Request) -> Response {
+    state.diffusion_proxy.proxy_request(req, Some(&headers)).await
+}
+
+async fn diffusion_proxy_handler_no_body(State(state): State<Arc<AppState>>, headers: http::HeaderMap, req: Request) -> Response {
+    state.diffusion_proxy.proxy_request(req, Some(&headers)).await
+}
+
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
@@ -643,6 +654,17 @@ pub fn build_app(
             "/v1/conversations/{conversation_id}/items/{item_id}",
             get(v1_conversations_get_item).delete(v1_conversations_delete_item),
         )
+        // Diffusion model routes
+        .route("/v1/images/generations", post(diffusion_proxy_handler))
+        .route("/v1/images/edits", post(diffusion_proxy_handler))
+        .route("/v1/images/{image_id}/content", get(diffusion_proxy_handler_no_body))
+        .route("/v1/videos", post(diffusion_proxy_handler))
+        .route("/v1/videos", get(diffusion_proxy_handler_no_body))
+        .route("/v1/videos/{video_id}/content", get(diffusion_proxy_handler_no_body))
+        .route("/v1/set_lora", post(diffusion_proxy_handler))
+        .route("/v1/merge_lora_weights", post(diffusion_proxy_handler))
+        .route("/v1/unmerge_lora_weights", post(diffusion_proxy_handler))
+        .route("/v1/list_loras", get(diffusion_proxy_handler_no_body))
         .route_layer(axum::middleware::from_fn_with_state(
             app_state.clone(),
             middleware::concurrency_limit_middleware,
@@ -875,11 +897,14 @@ pub async fn startup(config: ServerConfig) -> Result<(), Box<dyn std::error::Err
         }
     }
 
+    let diffusion_proxy = Arc::new(DiffusionProxy::new(app_context.clone()));
+    
     let app_state = Arc::new(AppState {
         router,
         context: app_context.clone(),
         concurrency_queue_tx: limiter.queue_tx.clone(),
         router_manager: Some(router_manager),
+        diffusion_proxy,
     });
     if let Some(service_discovery_config) = config.service_discovery_config {
         if service_discovery_config.enabled {
