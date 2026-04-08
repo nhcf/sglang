@@ -11,6 +11,7 @@ use sgl_model_gateway::{
     data_connector::{
         MemoryConversationItemStorage, MemoryConversationStorage, MemoryResponseStorage,
     },
+    diffusion_proxy::DiffusionProxy,
     mcp::{McpConfig, McpManager},
     middleware::{AuthConfig, TokenBucket},
     policies::PolicyRegistry,
@@ -85,9 +86,10 @@ pub fn create_test_app(
     // Create AppState with the test router and context
     let app_state = Arc::new(AppState {
         router,
-        context: app_context,
+        context: app_context.clone(),
         concurrency_queue_tx: None,
         router_manager: None,
+        diffusion_proxy: Arc::new(DiffusionProxy::new(app_context)),
     });
 
     // Configure request ID headers (use defaults if not specified)
@@ -127,6 +129,7 @@ pub fn create_test_app_with_context(
         context: app_context.clone(),
         concurrency_queue_tx: None,
         router_manager: None,
+        diffusion_proxy: Arc::new(DiffusionProxy::new(app_context.clone())),
     });
 
     // Get config from the context

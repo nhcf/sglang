@@ -4,43 +4,49 @@ use axum::{extract::Request, http::HeaderMap, response::Response, body};
 use reqwest::Client;
 use tracing::{error, info};
 
-use crate::{app_context::AppContext, core::worker::Worker};
+use crate::app_context::AppContext;
 
 #[derive(Clone)]
 pub struct DiffusionProxy {
     client: Client,
     context: Arc<AppContext>,
+    worker_urls: Vec<String>,
 }
 
 impl DiffusionProxy {
     pub fn new(context: Arc<AppContext>) -> Self {
+        // 从配置中获取 worker URLs
+        let worker_urls = match &context.router_config.mode {
+            crate::config::types::RoutingMode::Regular { worker_urls } => worker_urls.clone(),
+            crate::config::types::RoutingMode::OpenAI { worker_urls } => worker_urls.clone(),
+            _ => Vec::new(),
+        };
+        
         Self {
             client: Client::new(),
             context,
+            worker_urls,
         }
     }
 
-    async fn select_worker(&self) -> Option<Arc<dyn Worker>> {
-        let workers = self.context.worker_registry.get_all();
-        
-        if workers.is_empty() {
-            error!("No workers available for diffusion proxy");
+    fn select_worker_url(&self) -> Option<String> {
+        if self.worker_urls.is_empty() {
+            error!("No worker URLs configured for diffusion proxy");
             return None;
         }
 
-        // 随机选择一个工作器（不依赖健康检查）
+        // 随机选择一个 worker URL
         use std::time::SystemTime;
         let random_index = SystemTime::now()
             .elapsed()
             .unwrap_or_default()
-            .subsec_nanos() as usize % workers.len();
-        Some(workers[random_index].clone())
+            .subsec_nanos() as usize % self.worker_urls.len();
+        Some(self.worker_urls[random_index].clone())
     }
 
     pub async fn proxy_request(&self, req: Request, headers: Option<&HeaderMap>) -> Response {
-        match self.select_worker().await {
-            Some(worker) => {
-                let worker_url = worker.url().to_string();
+        match self.select_worker_url() {
+            Some(worker_url) => {
                 info!("Forwarding request to worker: {}", worker_url);
                 
                 // 构建转发请求
@@ -85,7 +91,7 @@ impl DiffusionProxy {
                 }
             }
             None => {
-                error!("No healthy workers available");
+                error!("No worker URLs available");
                 Response::builder()
                     .status(503)
                     .body("Service Unavailable".into())

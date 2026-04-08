@@ -686,7 +686,8 @@ pub fn build_app(
         .route("/engine_metrics", get(engine_metrics))
         .route("/v1/models", get(v1_models))
         .route("/get_model_info", get(get_model_info))
-        .route("/get_server_info", get(get_server_info));
+        .route("/get_server_info", get(get_server_info))
+        .route("/models", get(diffusion_proxy_handler_no_body));
 
     let admin_routes = Router::new()
         .route("/flush_cache", post(flush_cache))

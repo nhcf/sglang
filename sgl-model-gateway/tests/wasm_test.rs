@@ -193,6 +193,7 @@ async fn create_test_app_with_wasm() -> (axum::Router, Arc<AppContext>, TempDir)
         context: app_context.clone(),
         concurrency_queue_tx: None,
         router_manager: None,
+        diffusion_proxy: Arc::new(sgl_model_gateway::diffusion_proxy::DiffusionProxy::new(app_context.clone())),
     });
 
     let request_id_headers = vec!["x-request-id".to_string(), "x-correlation-id".to_string()];
